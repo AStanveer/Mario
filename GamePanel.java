@@ -5,20 +5,18 @@ import java.util.ArrayList;
 
 public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private Timer timer;
-    private final int DELAY = 16; // ~60 FPS
+    private final int DELAY = 16;
+    private final int GAME_TIME_LIMIT = 300;
+    private int timeLeft = GAME_TIME_LIMIT;
+    private long lastTimerCheck = System.currentTimeMillis(); // 
 
     private Player player;
     private boolean left, right, jumping;
 
-    private ArrayList<Platform> platforms;
-    private ArrayList<Coin> coins;
-    private ArrayList<Enemy> enemies;
-    private ArrayList<Obstacle> obstacles;
-    private ArrayList<Image> backgroundImages;
     private Level level;
     private int cameraX = 0;
+    private int playerLives = 5;
     private boolean gameOver = false;
-    Image backgroundImage;
 
     public GamePanel() {
         setPreferredSize(new Dimension(800, 600));
@@ -29,60 +27,61 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         player = new Player(100, 300);
         timer = new Timer(DELAY, this);
 
-        platforms = new ArrayList<>();
-        platforms.add(new Platform(0, 500, 4000, 350,false));
-        platforms.add(new Platform(300, 400, 200, 20,true));
-        platforms.add(new Platform(600, 340, 200, 20,true));
-        platforms.add(new Platform(950, 420, 150, 20,true));
-
-        coins = new ArrayList<>();
-        coins.add(new Coin(350, 380));
-        coins.add(new Coin(650, 320));
-
-        enemies = new ArrayList<>();
-        enemies.add(new Enemy(1000, 360));
-        enemies.add(new Enemy(1200, 440));
-        enemies.add(new Enemy(1800, 440));
-
-        obstacles = new ArrayList<>();
-        obstacles.add(new Obstacle(1600, 450));
-
-        backgroundImages = new ArrayList<>();
-        backgroundImages.add(new ImageIcon(getClass().getResource("/Library.png")).getImage());
-        backgroundImages.add(new ImageIcon(getClass().getResource("/World1.png")).getImage());
-        backgroundImages.add(new ImageIcon(getClass().getResource("/World2.png")).getImage());
-        backgroundImages.add(new ImageIcon(getClass().getResource("/Library.png")).getImage());
-        backgroundImages.add(new ImageIcon(getClass().getResource("/World2.png")).getImage());
-        backgroundImages.add(new ImageIcon(getClass().getResource("/World1.png")).getImage());
+        level = new Level(1); // Load level 1
     }
 
     public void startGame() {
         timer.start();
     }
+    private void handlePlayerHit() {
+    playerLives--;
+    if (playerLives <= 0) {
+        gameOver = true;
+        timer.stop();
+        repaint();
+    } else {
+        player.setX(100);
+        player.setY(300);
+    }
+}
 
     @Override
-    public void actionPerformed(ActionEvent e) {
-        if(!gameOver){
-            player.move(left, right, jumping, platforms);
-            for (Coin c : coins) {
-                c.checkCollision(player);
+public void actionPerformed(ActionEvent e) {
+    if (!gameOver) {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastTimerCheck >= 1000) { // 1 second passed
+            timeLeft--;
+            lastTimerCheck = currentTime;
+
+            if (timeLeft <= 0) {
+                handlePlayerHit(); // lose a life
+                timeLeft = GAME_TIME_LIMIT; // reset timer
             }
-            for (Enemy enemy : enemies) {
-                enemy.move();
-                if(enemy.checkCollision(player)){
-                    gameOver = true; 
-                    timer.stop();
-                }
+        }
+        player.move(left, right, jumping, level.getPlatforms());
+
+        for (Coin c : level.getCoins()) {
+            c.checkCollision(player);
+        }
+
+        for (Enemy enemy : level.getEnemies()) {
+            enemy.move();
+            if (enemy.checkCollision(player)) {
+                handlePlayerHit();
+                return;
             }
-            for (Obstacle obstacle : obstacles) {
-                obstacle.update();
-                if(obstacle.checkCollision(player)){
-                    gameOver = true;
-                    timer.stop();
-                }}
-            cameraX = player.getX() - 400;
-            repaint();
-        
+        }
+
+        for (Obstacle obstacle : level.getObstacles()) {
+            obstacle.update();
+            if (obstacle.checkCollision(player)) {
+                handlePlayerHit();
+                return;
+            }
+        }
+
+        cameraX = player.getX() - 400;
+        repaint();
     }
 }
 
@@ -90,41 +89,50 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        
 
         Graphics2D g2d = (Graphics2D) g.create();
         g2d.translate(-cameraX, 0);
 
-        level.draw(g2d);
-        int screenWidth = getWidth(); // should be 800
+        int screenWidth = getWidth();
         int screenHeight = getHeight();
 
-        int sectionWidth = screenWidth; // 800px per image
-        int startIdx = Math.max(0, cameraX / sectionWidth - 1); // preload one before
-        int endIdx = Math.min(backgroundImages.size(), startIdx + 6); // and one after
+        ArrayList<Image> backgroundImages = level.getBackgroundImages();
+        int sectionWidth = screenWidth;
+
+        int startIdx = Math.max(0, cameraX / sectionWidth - 1);
+        int endIdx = Math.min(backgroundImages.size(), startIdx + 6);
 
         for (int i = startIdx; i < endIdx; i++) {
             int drawX = i * sectionWidth;
             g2d.drawImage(backgroundImages.get(i), drawX, 0, sectionWidth, screenHeight, null);
         }
-        for (Platform p : platforms) p.draw(g2d);
-        for (Coin c : coins) c.draw(g2d);
-        for (Enemy e : enemies) e.draw(g2d);
-        for (Obstacle o : obstacles) o.draw(g2d);
 
-        player.draw(g2d,left,right,jumping);
+        for (Platform p : level.getPlatforms()) p.draw(g2d);
+        for (Coin c : level.getCoins()) c.draw(g2d);
+        for (Enemy e : level.getEnemies()) e.draw(g2d);
+        for (Obstacle o : level.getObstacles()) o.draw(g2d);
+
+        player.draw(g2d, left, right, jumping);
         g2d.dispose();
-        if(gameOver){
-            g.setColor(Color.RED);
-            g.setFont(new Font("Arial", Font.BOLD, 48));
-            g.drawString("Game Over!", 280,300);
-        }else{
-            g.setColor(Color.WHITE);
-            g.setFont(new Font("Arial", Font.BOLD, 25));
-            g.drawString("Merits: "+ Coin.getScore() + ".", 10,20);
-        }
-    }
 
+        if (gameOver) {
+    g.setColor(Color.RED);
+    g.setFont(new Font("Arial", Font.BOLD, 48));
+    g.drawString("You have lost!", 250, 280);
+    g.drawString("Game Over!", 280, 340);
+} else {
+    g.setColor(Color.WHITE);
+    g.setFont(new Font("Arial", Font.BOLD, 25));
+    g.drawString("Merits: " + Coin.getScore(), 10, 20);
+    g.drawString("Lives: " + playerLives, 10, 50);
+    
+    // Convert seconds to MM:SS format
+    int minutes = timeLeft / 60;
+    int seconds = timeLeft % 60;
+    String timeString = String.format("Time: %02d:%02d", minutes, seconds);
+    g.drawString(timeString, 650, 20); // adjust x/y for top right corner
+}
+    }
     @Override
     public void keyPressed(KeyEvent e) {
         switch (e.getKeyCode()) {
